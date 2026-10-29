@@ -1,0 +1,51 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-steel-950: #0e1012;
+  --color-steel-900: #15181b;
+  --color-steel-800: #1d2125;
+  --color-steel-700: #2a3036;
+  --color-steel-600: #3b434b;
+  --color-steel-400: #8d98a3;
+  --color-steel-200: #d3d9df;
+  --color-ember: #ff7a1a;
+  --color-ember-dark: #d95f06;
+  --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-steel-950);
+  color: var(--color-steel-200);
+  font-family: var(--font-sans);
+  -webkit-tap-highlight-color: transparent;
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition select-none;
+    @apply bg-steel-700 text-steel-200 hover:bg-steel-600 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40;
+  }
+  .btn-primary {
+    @apply bg-ember text-steel-950 hover:bg-ember-dark;
+  }
+  .btn-danger {
+    @apply bg-red-600/90 text-white hover:bg-red-600;
+  }
+  .input {
+    @apply min-h-11 w-full rounded-lg border border-steel-600 bg-steel-900 px-3 py-2 text-base text-steel-200 placeholder:text-steel-400;
+    @apply focus:border-ember focus:outline-none focus:ring-2 focus:ring-ember/40;
+  }
+  .card {
+    @apply rounded-xl border border-steel-700 bg-steel-800 p-4;
+  }
+  .label {
+    @apply mb-1 block text-xs font-medium tracking-wide text-steel-400 uppercase;
+  }
+}
