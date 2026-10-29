@@ -5,6 +5,11 @@ Aplikasi kasir warung (React + TypeScript + Vite). **Fase 1: offline penuh**, da
 ## Fitur
 Kasir (keranjang, kembalian, tolak jika stok kurang) · Barang (tambah/ubah/arsip, harga modal & jual) · Stok (restok, koreksi wajib alasan, perlu belanja, riwayat) · Laporan harian (omzet, laba kotor, terlaris) · Cadangan JSON.
 
+## Dokumentasi & Riwayat
+- 📖 [PANDUAN.md](file:///C:/Users/ADMIN/.gemini/antigravity/scratch/warung-metal/PANDUAN.md) - Buku panduan pemakaian aplikasi lengkap.
+- 💬 [CHAT_HISTORY.md](file:///C:/Users/ADMIN/.gemini/antigravity/scratch/warung-metal/CHAT_HISTORY.md) - Rekaman obrolan, diskusi, dan keputusan dari awal sampai selesai.
+- 📐 [docs/DESAIN_ARSITEKTUR.md](file:///C:/Users/ADMIN/.gemini/antigravity/scratch/warung-metal/docs/DESAIN_ARSITEKTUR.md) - Dokumen rencana dan spesifikasi arsitektur proyek.
+
 ## Perintah
 ```
 npm install
