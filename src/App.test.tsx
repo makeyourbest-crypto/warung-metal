@@ -24,11 +24,9 @@ describe('alur kasir', () => {
     await user.click(screen.getByRole('button', { name: 'Tambah Indomie Goreng' }))
     expect(screen.getByLabelText('Jumlah Indomie Goreng')).toHaveTextContent('2')
 
-    const bayar = screen.getByRole('button', { name: 'BAYAR' })
-    expect(bayar).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: 'PROSES PEMBAYARAN' }))
     await user.type(screen.getByLabelText('Uang bayar'), '10000')
-    expect(bayar).toBeEnabled()
-    await user.click(bayar)
+    await user.click(screen.getByRole('button', { name: /Selesaikan Transaksi/ }))
 
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getByText('Rp 3.000')).toBeInTheDocument() // kembalian 10.000 - 7.000

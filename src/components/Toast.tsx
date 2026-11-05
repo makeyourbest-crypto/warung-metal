@@ -7,9 +7,10 @@ interface ToastItem {
 }
 interface ToastApi {
   ok: (t: string) => void
+  success: (t: string) => void
   error: (t: string) => void
 }
-const Ctx = createContext<ToastApi>({ ok: () => {}, error: () => {} })
+const Ctx = createContext<ToastApi>({ ok: () => {}, success: () => {}, error: () => {} })
 export const useToast = () => useContext(Ctx)
 
 export function ToastProvider({ children }: { children: ReactNode }) {
@@ -19,7 +20,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     setItems((s) => [...s, { id, kind, text }])
     setTimeout(() => setItems((s) => s.filter((i) => i.id !== id)), 3500)
   }, [])
-  const api = useMemo<ToastApi>(() => ({ ok: (t) => push('ok', t), error: (t) => push('error', t) }), [push])
+  const api = useMemo<ToastApi>(() => ({ ok: (t) => push('ok', t), success: (t) => push('ok', t), error: (t) => push('error', t) }), [push])
   return (
     <Ctx.Provider value={api}>
       {children}

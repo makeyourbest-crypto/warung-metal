@@ -180,7 +180,7 @@ describe('cadangan', () => {
   it('ekspor lalu impor memulihkan data persis', async () => {
     await seedSampleData(db)
     const [p] = await db.products.toArray()
-    await checkout([{ productId: p.id, qty: 3 }], 100000, db)
+    await checkout([{ productId: p.id, qty: 3 }], p.sellPrice * 3 + 10000, db)
     const json = await exportBackup(db)
     const stockBefore = [...(await getStockMap(db)).entries()].sort()
 
