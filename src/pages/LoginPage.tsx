@@ -138,19 +138,6 @@ export const LoginPage: React.FC = () => {
               Akun kasir dikelola langsung oleh pemilik warung melalui database Supabase.
             </p>
           </div>
-
-          {/* Quick bypass button if not configured */}
-          {!isConfigured && (
-            <div className="mt-3 text-center">
-              <button
-                type="button"
-                onClick={() => navigate('/')}
-                className="text-xs text-slate-400 hover:text-emerald-400 font-medium transition"
-              >
-                Lanjut ke Dasbor Kasir Sementara (Mode Offline) →
-              </button>
-            </div>
-          )}
         </div>
 
       </div>

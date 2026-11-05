@@ -3,7 +3,7 @@ import { Navigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 
 export const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { user, loading, isConfigured } = useAuth()
+  const { user, loading } = useAuth()
 
   if (loading) {
     return (
@@ -14,11 +14,12 @@ export const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ childr
     )
   }
 
-  // Jika dalam mode testing (Vitest) atau Supabase belum dikonfigurasi, izinkan akses langsung
-  if (import.meta.env.MODE === 'test' || !isConfigured) {
+  // Hanya izinkan bypass saat pengujian otomatis (Vitest)
+  if (import.meta.env.MODE === 'test') {
     return <>{children}</>
   }
 
+  // Wajibkan login kasir sebelum membuka aplikasi
   if (!user) {
     return <Navigate to="/login" replace />
   }
