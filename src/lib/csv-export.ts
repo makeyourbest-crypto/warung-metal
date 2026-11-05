@@ -39,7 +39,7 @@ interface ProductItem {
   minStock?: number
 }
 
-export function downloadProductsCsv(products: ProductItem[]): void {
+export function downloadProductsCsv(products: ProductItem[], customFilename?: string): void {
   const headers = [
     'Nama Barang',
     'Kategori',
@@ -70,7 +70,7 @@ export function downloadProductsCsv(products: ProductItem[]): void {
   })
 
   const dateStr = new Date().toISOString().slice(0, 10)
-  exportToCsv(`warung-metal-stok-barang-${dateStr}`, headers, rows)
+  exportToCsv(customFilename || `warung-metal-stok-barang-${dateStr}`, headers, rows)
 }
 
 interface SalesItemExport {
@@ -144,7 +144,7 @@ interface MovementItemExport {
   reason: string
 }
 
-export function downloadMovementsCsv(movements: MovementItemExport[]): void {
+export function downloadMovementsCsv(movements: MovementItemExport[], customFilename?: string): void {
   const headers = [
     'Tanggal & Waktu',
     'Nama Barang',
@@ -184,5 +184,5 @@ export function downloadMovementsCsv(movements: MovementItemExport[]): void {
   })
 
   const dateStr = new Date().toISOString().slice(0, 10)
-  exportToCsv(`warung-metal-mutasi-stok-${dateStr}`, headers, rows)
+  exportToCsv(customFilename || `warung-metal-mutasi-stok-${dateStr}`, headers, rows)
 }

@@ -323,6 +323,28 @@ export async function fetchCloudMovements(): Promise<StockMovement[]> {
   })) as StockMovement[]
 }
 
+export async function fetchCloudMovementsByDateRange(startDateIso: string, endDateIso: string): Promise<StockMovement[]> {
+  if (!isSupabaseConfigured) return []
+  const { data, error } = await supabase
+    .from('stock_movements')
+    .select('*, products(name)')
+    .gte('created_at', startDateIso)
+    .lte('created_at', endDateIso)
+    .order('created_at', { ascending: false })
+
+  if (error) throw new DomainError(`Gagal mengambil riwayat mutasi: ${error.message}`)
+  return (data || []).map((m) => ({
+    id: m.id,
+    productId: m.product_id,
+    type: m.type,
+    qtyChange: m.qty_change,
+    reason: m.reason,
+    saleId: m.sale_id,
+    createdAt: new Date(m.created_at).getTime(),
+    productName: m.products?.name,
+  })) as StockMovement[]
+}
+
 export async function fetchCloudSalesReport(rangeDays = 30) {
   if (!isSupabaseConfigured) return { totalRevenue: 0, totalProfit: 0, count: 0, sales: [] }
   const fromDate = new Date(Date.now() - rangeDays * 86400000).toISOString()

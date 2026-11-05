@@ -4,7 +4,7 @@ import { db } from '../db/schema'
 import { DomainError, exportBackup, getStockMap, importBackup } from '../db/services'
 import { isSupabaseConfigured } from '../db/supabase'
 import { 
-  fetchCloudMovements, 
+  fetchCloudMovementsByDateRange, 
   fetchCloudProducts, 
   fetchCloudSalesByDateRange 
 } from '../db/supabase-services'
@@ -21,7 +21,8 @@ import {
   Package, 
   RefreshCw, 
   Calendar,
-  Database
+  Database,
+  CheckCircle2
 } from 'lucide-react'
 
 interface MonthOption {
@@ -58,48 +59,52 @@ export default function Report() {
     return monthOptions.find((m) => m.value === selectedMonthValue) || monthOptions[0]
   }, [selectedMonthValue, monthOptions])
 
-  // State data penjualan bulanan untuk diekspor
-  const [loadingMonth, setLoadingMonth] = useState(false)
+  // State data penjualan & mutasi bulanan
+  const [loadingPeriod, setLoadingPeriod] = useState(false)
   const [monthlySales, setMonthlySales] = useState<any[]>([])
+  const [monthlyMovements, setMonthlyMovements] = useState<any[]>([])
 
-  // State loading untuk tombol ekspor
+  // State loading tombol ekspor
   const [exportingMonthSales, setExportingMonthSales] = useState(false)
-  const [exportingProducts, setExportingProducts] = useState(false)
   const [exportingMovements, setExportingMovements] = useState(false)
+  const [exportingProducts, setExportingProducts] = useState(false)
 
-  // Ambil data penjualan berdasarkan bulan yang dipilih
+  // Ambil data penjualan & mutasi berdasarkan bulan yang dipilih
   useEffect(() => {
     if (!selectedMonthOption) return
     let isCancelled = false
 
-    async function loadMonthlySales() {
-      setLoadingMonth(true)
+    async function loadPeriodData() {
+      setLoadingPeriod(true)
       try {
         const { year, month } = selectedMonthOption
         const startOfMonth = new Date(year, month, 1, 0, 0, 0, 0)
         const endOfMonth = new Date(year, month + 1, 0, 23, 59, 59, 999)
 
         if (isSupabaseConfigured) {
-          const res = await fetchCloudSalesByDateRange(
-            startOfMonth.toISOString(),
-            endOfMonth.toISOString()
-          )
+          // Ambil dari Supabase Cloud
+          const [salesRes, movsRes] = await Promise.all([
+            fetchCloudSalesByDateRange(startOfMonth.toISOString(), endOfMonth.toISOString()),
+            fetchCloudMovementsByDateRange(startOfMonth.toISOString(), endOfMonth.toISOString()),
+          ])
+
           if (!isCancelled) {
-            setMonthlySales(res.sales || [])
+            setMonthlySales(salesRes.sales || [])
+            setMonthlyMovements(movsRes || [])
           }
         } else {
-          // Fallback database lokal (Dexie)
+          // Fallback Database Lokal (Dexie)
           const fromTime = startOfMonth.getTime()
           const toTime = endOfMonth.getTime()
 
-          const sales = await db.sales
-            .where('createdAt')
-            .between(fromTime, toTime, true, true)
-            .toArray()
+          const [sales, movements, products] = await Promise.all([
+            db.sales.where('createdAt').between(fromTime, toTime, true, true).toArray(),
+            db.movements.where('createdAt').between(fromTime, toTime, true, true).toArray(),
+            db.products.toArray(),
+          ])
 
           const saleIds = sales.map((s) => s.id)
           const items = await db.saleItems.where('saleId').anyOf(saleIds).toArray()
-          const products = await db.products.toArray()
           const prodMap = new Map(products.map((p) => [p.id, p.name]))
 
           const mappedSales = sales.map((s) => ({
@@ -113,18 +118,24 @@ export default function Report() {
               })),
           }))
 
+          const mappedMovements = movements.map((m) => ({
+            ...m,
+            productName: prodMap.get(m.productId) ?? 'Barang',
+          }))
+
           if (!isCancelled) {
             setMonthlySales(mappedSales)
+            setMonthlyMovements(mappedMovements)
           }
         }
       } catch (err: any) {
-        console.error('Gagal memuat data penjualan bulanan:', err)
+        console.error('Gagal memuat data periode bulanan:', err)
       } finally {
-        if (!isCancelled) setLoadingMonth(false)
+        if (!isCancelled) setLoadingPeriod(false)
       }
     }
 
-    loadMonthlySales()
+    loadPeriodData()
 
     return () => {
       isCancelled = true
@@ -144,23 +155,44 @@ export default function Report() {
       downloadSalesCsv(monthlySales, `warung-metal-laporan-penjualan-${cleanMonthLabel}.csv`)
       toast.success(`Laporan penjualan ${selectedMonthOption.label} berhasil diunduh (.csv)!`)
     } catch (err: any) {
-      toast.error(`Gagal mengunduh laporan bulanan: ${err.message}`)
+      toast.error(`Gagal mengunduh penjualan: ${err.message}`)
     } finally {
       setExportingMonthSales(false)
     }
   }
 
-  // 2. Unduh CSV Stok & Nilai Modal Barang
+  // 2. Unduh CSV Riwayat Mutasi Stok Bulan Terpilih
+  async function handleExportMovementsCsv() {
+    if (monthlyMovements.length === 0) {
+      toast.error(`Tidak ada riwayat mutasi stok pada bulan ${selectedMonthOption.label}`)
+      return
+    }
+
+    setExportingMovements(true)
+    try {
+      const cleanMonthLabel = selectedMonthOption.label.toLowerCase().replace(/\s+/g, '-')
+      downloadMovementsCsv(monthlyMovements, `warung-metal-mutasi-stok-${cleanMonthLabel}.csv`)
+      toast.success(`Riwayat mutasi stok ${selectedMonthOption.label} berhasil diunduh (.csv)!`)
+    } catch (err: any) {
+      toast.error(`Gagal mengunduh mutasi stok: ${err.message}`)
+    } finally {
+      setExportingMovements(false)
+    }
+  }
+
+  // 3. Unduh CSV Stok Fisik & Nilai Modal Terkini (Real-Time)
   async function handleExportProductsCsv() {
     setExportingProducts(true)
     try {
+      const dateStr = new Date().toISOString().slice(0, 10)
+
       if (isSupabaseConfigured) {
         const prods = await fetchCloudProducts()
         if (prods.length === 0) {
           toast.error('Belum ada data barang untuk diekspor.')
           return
         }
-        downloadProductsCsv(prods)
+        downloadProductsCsv(prods, `warung-metal-stok-fisik-terkini-${dateStr}.csv`)
       } else {
         const [prods, stockMap] = await Promise.all([
           db.products.where('isArchived').equals(0).toArray(),
@@ -171,48 +203,13 @@ export default function Report() {
           return
         }
         const mapped = prods.map((p) => ({ ...p, stock: stockMap.get(p.id) ?? 0 }))
-        downloadProductsCsv(mapped)
+        downloadProductsCsv(mapped, `warung-metal-stok-fisik-terkini-${dateStr}.csv`)
       }
-      toast.success('Data stok barang berhasil diunduh (.csv)!')
+      toast.success('Data stok fisik terkini berhasil diunduh (.csv)!')
     } catch (err: any) {
       toast.error(`Gagal ekspor stok: ${err.message}`)
     } finally {
       setExportingProducts(false)
-    }
-  }
-
-  // 3. Unduh CSV Mutasi Stok
-  async function handleExportMovementsCsv() {
-    setExportingMovements(true)
-    try {
-      if (isSupabaseConfigured) {
-        const movements = await fetchCloudMovements()
-        if (movements.length === 0) {
-          toast.error('Belum ada riwayat mutasi stok untuk diekspor.')
-          return
-        }
-        downloadMovementsCsv(movements)
-      } else {
-        const [movements, products] = await Promise.all([
-          db.movements.toArray(),
-          db.products.toArray(),
-        ])
-        if (movements.length === 0) {
-          toast.error('Belum ada riwayat mutasi stok lokal.')
-          return
-        }
-        const prodMap = new Map(products.map((p) => [p.id, p.name]))
-        const mapped = movements.map((m) => ({
-          ...m,
-          productName: prodMap.get(m.productId) ?? 'Barang',
-        }))
-        downloadMovementsCsv(mapped)
-      }
-      toast.success('Riwayat mutasi stok berhasil diunduh (.csv)!')
-    } catch (err: any) {
-      toast.error(`Gagal ekspor mutasi: ${err.message}`)
-    } finally {
-      setExportingMovements(false)
     }
   }
 
@@ -250,55 +247,63 @@ export default function Report() {
   return (
     <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 bg-slate-950 text-slate-100 max-w-5xl mx-auto w-full pb-24 space-y-6">
       
-      {/* Page Header */}
-      <div>
-        <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight flex items-center gap-2">
-          <FileSpreadsheet className="w-6 h-6 text-emerald-400" />
-          <span>Pusat Tarik Data Warung</span>
-        </h1>
-        <p className="text-xs text-slate-400 mt-1">
-          Unduh laporan penjualan bulanan, stok barang fisik, dan mutasi kasir ke format .CSV untuk pembukuan Excel
-        </p>
+      {/* Header & Filter Periode Utama */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-slate-800/60">
+        <div>
+          <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight flex items-center gap-2">
+            <FileSpreadsheet className="w-6 h-6 text-emerald-400" />
+            <span>Pusat Tarik Data Warung</span>
+          </h1>
+          <p className="text-xs text-slate-400 mt-1">
+            Ekspor laporan penjualan bulanan, riwayat mutasi stok per periode, dan nilai modal warung (.CSV)
+          </p>
+        </div>
+
+        {/* Global Period Selector */}
+        <div className="flex items-center gap-2.5 bg-slate-900 border border-slate-800 p-2 rounded-2xl shadow-sm self-start sm:self-auto">
+          <Calendar className="w-4 h-4 text-emerald-400 ml-1 shrink-0" />
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-slate-400 font-semibold">Pilih Periode:</span>
+            <select
+              value={selectedMonthValue}
+              onChange={(e) => setSelectedMonthValue(e.target.value)}
+              className="bg-slate-950 text-white text-xs font-bold py-1.5 px-3 rounded-xl border border-slate-800 outline-none cursor-pointer hover:border-emerald-500/50 focus:border-emerald-500 transition"
+            >
+              {monthOptions.map((opt) => (
+                <option key={opt.value} value={opt.value} className="bg-slate-900 text-slate-100">
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
       </div>
 
-      {/* Modul 1: Tarik Laporan Penjualan Per Bulan */}
+      {/* Modul 1: Tarik Laporan Penjualan (Bulanan) */}
       <section className="bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-6 shadow-xl space-y-4">
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center justify-center text-xl">
-              <Receipt className="w-6 h-6" />
+            <div className="w-11 h-11 rounded-2xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center justify-center shrink-0">
+              <Receipt className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-white flex items-center gap-2">
-                <span>Laporan Penjualan Kasir (Bulanan)</span>
+              <h2 className="text-sm sm:text-base font-bold text-white flex items-center gap-2">
+                <span>Laporan Penjualan Kasir ({selectedMonthOption.label})</span>
               </h2>
-              <p className="text-xs text-slate-400">
-                Rekap nota transaksi lengkap: tanggal/jam, metode bayar (Tunai/QRIS), total belanja, dan rincian barang.
+              <p className="text-xs text-slate-400 mt-0.5">
+                Rekap seluruh nota kasir: tanggal/jam, metode bayar (Tunai/QRIS), total tagihan, uang bayar, kembalian, dan rincian belanjaan.
               </p>
             </div>
           </div>
         </div>
 
-        {/* Action Panel: Pilihan Bulan & Tombol Tarik CSV */}
         <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5">
-            <Calendar className="w-4 h-4 text-emerald-400 shrink-0" />
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-slate-400 font-medium">Pilih Periode:</span>
-              <select
-                value={selectedMonthValue}
-                onChange={(e) => setSelectedMonthValue(e.target.value)}
-                className="bg-slate-900 text-white text-xs font-bold py-1.5 px-3 rounded-xl border border-slate-800 outline-none cursor-pointer hover:border-emerald-500/40 transition"
-              >
-                {monthOptions.map((opt) => (
-                  <option key={opt.value} value={opt.value} className="bg-slate-900 text-slate-100">
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <span className="text-[11px] text-slate-500 hidden md:inline">
-              ({loadingMonth ? 'Memeriksa data...' : `${monthlySales.length} transaksi`})
+          <div className="flex items-center gap-2 text-xs text-slate-400">
+            <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+            <span>
+              {loadingPeriod
+                ? 'Memeriksa transaksi...'
+                : `${monthlySales.length} transaksi kasir tercatat pada ${selectedMonthOption.label}`}
             </span>
           </div>
 
@@ -317,60 +322,86 @@ export default function Report() {
         </div>
       </section>
 
-      {/* Modul 2 & 3: Tarik Stok Barang & Riwayat Mutasi Stok (2 Cards Grid) */}
+      {/* Modul 2: Tarik Riwayat Mutasi Stok (Bulanan) */}
       <section className="bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-6 shadow-xl space-y-4">
-        <div>
-          <h2 className="text-base font-bold text-white flex items-center gap-2">
-            <FileSpreadsheet className="w-5 h-5 text-emerald-400" />
-            <span>Tarik Data Katalog & Riwayat Stok (.CSV)</span>
-          </h2>
-          <p className="text-xs text-slate-400 mt-1">
-            Unduh data inventaris warung untuk audit fisik stok barang atau rekap nilai modal.
-          </p>
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-2xl bg-amber-500/10 text-amber-400 border border-amber-500/20 flex items-center justify-center shrink-0">
+              <RefreshCw className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-sm sm:text-base font-bold text-white flex items-center gap-2">
+                <span>Riwayat Keluar-Masuk Mutasi Stok ({selectedMonthOption.label})</span>
+              </h2>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Catatan mutasi stok kronologis pada bulan {selectedMonthOption.label}: pengurangan dari penjualan kasir, penambahan restok supplier, dan koreksi stok fisik.
+              </p>
+            </div>
+          </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-1">
-          {/* Card 1: Stok & Nilai Aset Modal */}
-          <div className="p-4 sm:p-5 rounded-2xl bg-slate-950 border border-slate-800 flex flex-col justify-between gap-4">
-            <div className="space-y-2">
-              <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center">
-                <Package className="w-5 h-5" />
-              </div>
-              <h3 className="text-sm font-bold text-white">Stok & Nilai Aset Modal Warung</h3>
-              <p className="text-xs text-slate-400 leading-relaxed">
-                Katalog seluruh barang, satuan, sisa stok fisik terbaru, harga modal, harga jual, margin keuntungan, dan total rupiah modal aset warung.
-              </p>
-            </div>
-            <button
-              onClick={handleExportProductsCsv}
-              disabled={exportingProducts}
-              className="w-full py-2.5 px-4 rounded-xl bg-slate-850 hover:bg-slate-800 border border-slate-750 hover:border-emerald-500/40 text-emerald-400 font-bold text-xs flex items-center justify-center gap-2 transition cursor-pointer disabled:opacity-50"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>{exportingProducts ? 'Mengunduh...' : 'Unduh Data Stok (.CSV)'}</span>
-            </button>
+        <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-xs text-slate-400">
+            <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+            <span>
+              {loadingPeriod
+                ? 'Memeriksa mutasi...'
+                : `${monthlyMovements.length} log mutasi stok tercatat pada ${selectedMonthOption.label}`}
+            </span>
           </div>
 
-          {/* Card 2: Riwayat Mutasi Stok */}
-          <div className="p-4 sm:p-5 rounded-2xl bg-slate-950 border border-slate-800 flex flex-col justify-between gap-4">
-            <div className="space-y-2">
-              <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center">
-                <RefreshCw className="w-5 h-5" />
+          <button
+            onClick={handleExportMovementsCsv}
+            disabled={exportingMovements || monthlyMovements.length === 0}
+            className="py-2.5 px-5 rounded-xl bg-amber-600 hover:bg-amber-500 text-slate-950 font-bold text-xs flex items-center justify-center gap-2 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shadow-md shrink-0"
+          >
+            <Download className="w-4 h-4 text-slate-950" />
+            <span>
+              {exportingMovements
+                ? 'Mengunduh...'
+                : `Unduh Mutasi Stok ${selectedMonthOption.label} (.CSV)`}
+            </span>
+          </button>
+        </div>
+      </section>
+
+      {/* Modul 3: Tarik Stok Fisik & Nilai Modal Aset (Real-Time Terkini) */}
+      <section className="bg-slate-900 border border-slate-800 rounded-3xl p-5 sm:p-6 shadow-xl space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-2xl bg-blue-500/10 text-blue-400 border border-blue-500/20 flex items-center justify-center shrink-0">
+              <Package className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm sm:text-base font-bold text-white">
+                  Stok Fisik & Nilai Modal Aset Warung
+                </h2>
+                <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold flex items-center gap-1">
+                  <CheckCircle2 className="w-3 h-3" /> Real-Time Saat Ini
+                </span>
               </div>
-              <h3 className="text-sm font-bold text-white">Riwayat Keluar-Masuk Mutasi Stok</h3>
-              <p className="text-xs text-slate-400 leading-relaxed">
-                Log riwayat mutasi stok lengkap secara kronologis: pengurangan akibat penjualan kasir, penambahan restok dari supplier, dan koreksi selisih.
+              <p className="text-xs text-slate-400 mt-0.5">
+                Katalog lengkap, sisa stok di rak detik ini, harga modal, harga jual, margin, dan total rupiah modal aset warung (ideal untuk audit stok opname toko).
               </p>
             </div>
-            <button
-              onClick={handleExportMovementsCsv}
-              disabled={exportingMovements}
-              className="w-full py-2.5 px-4 rounded-xl bg-slate-850 hover:bg-slate-800 border border-slate-750 hover:border-emerald-500/40 text-emerald-400 font-bold text-xs flex items-center justify-center gap-2 transition cursor-pointer disabled:opacity-50"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>{exportingMovements ? 'Mengunduh...' : 'Unduh Mutasi Stok (.CSV)'}</span>
-            </button>
           </div>
+        </div>
+
+        <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-xs text-slate-400">
+            <span className="w-2 h-2 rounded-full bg-blue-400"></span>
+            <span>Data stok fisik terhubung langsung dengan kondisi inventaris rak warung</span>
+          </div>
+
+          <button
+            onClick={handleExportProductsCsv}
+            disabled={exportingProducts}
+            className="py-2.5 px-5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs flex items-center justify-center gap-2 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shadow-md shrink-0"
+          >
+            <Download className="w-4 h-4" />
+            <span>{exportingProducts ? 'Mengunduh...' : 'Unduh Stok Fisik Terkini (.CSV)'}</span>
+          </button>
         </div>
       </section>
 
